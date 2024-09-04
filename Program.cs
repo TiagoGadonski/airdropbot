@@ -1,27 +1,22 @@
-﻿using System;
-using System.Net.Http;
-using System.Threading.Tasks;
-using HtmlAgilityPack;
-using MailKit.Net.Smtp;
-using MimeKit;
+﻿using HtmlAgilityPack;
 
 namespace Airdropbot
 {
     class Program
     {
+        private static Dictionary<string, string> detectedAirdrops = new Dictionary<string, string>();
+
         static async Task Main(string[] args)
         {
             Console.WriteLine("Iniciando monitoramento de airdrops...");
 
             string airdropsIoUrl = "https://airdrops.io/";
-            string coinMarketCapAirdropUrl = "https://coinmarketcap.com/airdrop/";
+            string airdropsIoXPath = "//div[@class='airdrops-list']"; // Exemplo de XPath
 
             while (true)
             {
-                await CheckAirdropsAsync(airdropsIoUrl, "//div[@class='airdrops-list']", "Airdrops.io");
-                await CheckAirdropsAsync(coinMarketCapAirdropUrl, "//div[contains(@class, 'content__row')]", "CoinMarketCap Airdrop");
-
-                //await Task.Delay(3600000); // Verifica a cada 1 hora
+                await CheckAirdropsAsync(airdropsIoUrl, airdropsIoXPath, "Airdrops.io");
+                await Task.Delay(3600); // Verifica a cada 1 hora
             }
         }
 
@@ -31,7 +26,6 @@ namespace Airdropbot
             {
                 try
                 {
-                    // Configurar cabeçalhos para simular um navegador real
                     client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3");
 
                     var response = await client.GetStringAsync(url);
@@ -44,29 +38,38 @@ namespace Airdropbot
                     {
                         foreach (var airdrop in airdrops)
                         {
-                            var nameNode = airdrop.SelectSingleNode(".//h3") ?? airdrop.SelectSingleNode(".//span[contains(@class, 'title')]"); // Ajuste para CoinMarketCap
-                            var detailsNode = airdrop.SelectSingleNode(".//p") ?? airdrop.SelectSingleNode(".//div[contains(@class, 'sc-1eb5slv-0')]"); // Ajuste para CoinMarketCap
+                            // Ajuste o XPath conforme necessário
+                            var nameNode = airdrop.SelectSingleNode(".//h3[contains(@class, 'airdrop-name')]");
+                            var detailsNode = airdrop.SelectSingleNode(".//p[contains(@class, 'airdrop-details')]");
 
                             if (nameNode != null && detailsNode != null)
                             {
                                 string name = nameNode.InnerText.Trim();
                                 string details = detailsNode.InnerText.Trim();
-                                Console.WriteLine($"Novo Airdrop em {source}: {name}\nDetalhes: {details}\n");
 
-                                // Envia notificação pelo Telegram
-                                await SendTelegramNotificationAsync(name, details, source);
+                                // Verifica se o airdrop já foi detectado
+                                if (!detectedAirdrops.ContainsKey(name))
+                                {
+                                    // Se não foi detectado, adiciona ao dicionário e envia notificação
+                                    detectedAirdrops[name] = details;
+                                    Console.WriteLine($"Novo Airdrop em {source}: {name}\nDetalhes: {details}\n");
+                                    await SendTelegramNotificationAsync(name, details, source);
+                                }
                             }
                         }
                     }
                     else
                     {
                         Console.WriteLine($"Nenhum airdrop encontrado em {source}.");
-                        await CheckCoinMarketCapAirdropsAsync();
                     }
+                }
+                catch (HttpRequestException httpRequestEx)
+                {
+                    Console.WriteLine($"Erro ao acessar o site {source}: {httpRequestEx.Message}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Erro ao acessar o site {source}: {ex.Message}");
+                    Console.WriteLine($"Erro inesperado ao acessar o site {source}: {ex.Message}");
                 }
             }
         }
